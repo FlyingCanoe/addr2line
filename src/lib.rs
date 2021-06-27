@@ -289,6 +289,17 @@ impl<R: gimli::Reader> Context<R> {
         Ok(None)
     }
 
+    /// TODO doc
+    pub fn find_address(&self, location: Location) -> Result<Option<u64>, Error> {
+        for (addr, _, loc) in LocationIter::new(self)? {
+            if loc == location {
+                return Ok(Some(addr));
+            }
+        }
+
+        Ok(None)
+    }
+
     /// Return source file and lines for a range of addresses. For each location it also
     /// returns the address and size of the range of the underlying instructions.
     pub fn find_location_range(
@@ -787,6 +798,25 @@ where
     }
 }
 
+struct LocationIter<'ctx, R: gimli::Reader> {
+    iter: LocationRangeIter<'ctx, R>,
+}
+
+impl<'ctx, R: gimli::Reader> LocationIter<'ctx, R> {
+    fn new(ctx: &'ctx Context<R>) -> Result<Self, Error> {
+        let iter = LocationRangeIter::new(ctx, 0, u64::MAX)?;
+        Ok(Self { iter })
+    }
+}
+
+impl<'ctx, R: gimli::Reader> Iterator for LocationIter<'ctx, R> {
+    type Item = (u64, u64, Location<'ctx>);
+
+    fn next(&mut self) -> Option<(u64, u64, Location<'ctx>)> {
+        self.iter.next()
+    }
+}
+
 #[cfg(feature = "fallible-iterator")]
 impl<'ctx, R> fallible_iterator::FallibleIterator for LocationRangeIter<'ctx, R>
 where
@@ -1173,6 +1203,7 @@ pub fn demangle_auto(name: Cow<str>, language: Option<gimli::DwLang>) -> Cow<str
 }
 
 /// A source location.
+#[derive(PartialEq, Clone, Debug)]
 pub struct Location<'a> {
     /// The file name.
     pub file: Option<&'a str>,
