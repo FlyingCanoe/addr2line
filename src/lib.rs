@@ -23,7 +23,7 @@
 //! which is parsed using [`gimli`](https://github.com/gimli-rs/gimli).  The example CLI
 //! wrapper also uses symbol table information provided by the `object` crate.
 #![deny(missing_docs)]
-#![no_std]
+//#![no_std]
 
 #[allow(unused_imports)]
 #[macro_use]
@@ -47,11 +47,11 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use core::cmp::{self, Ordering};
-use core::iter;
-use core::mem;
-use core::num::NonZeroU64;
-use core::u64;
+use std::cmp::{self, Ordering};
+use std::iter;
+use std::mem;
+use std::num::NonZeroU64;
+use std::u64;
 
 use crate::function::{Function, Functions, InlinedFunction};
 use crate::lazy::LazyCell;
@@ -286,6 +286,17 @@ impl<R: gimli::Reader> Context<R> {
                 return Ok(Some(location));
             }
         }
+        Ok(None)
+    }
+
+    /// s
+    pub fn find_address(&self, location: Location) -> Result<Option<u64>, Error> {
+        for (addr, _, loc) in Temp::new(self)? {
+            if loc == location {
+                return Ok(Some(addr));
+            }
+        }
+
         Ok(None)
     }
 
@@ -801,6 +812,25 @@ where
     }
 }
 
+struct Temp<'ctx, R: gimli::Reader> {
+    iter: LocationRangeIter<'ctx, R>,
+}
+
+impl<'ctx, R: gimli::Reader> Temp<'ctx, R> {
+    fn new(ctx: &'ctx Context<R>) -> Result<Self, Error> {
+        let iter = LocationRangeIter::new(ctx, 0, u64::MAX)?;
+        Ok(Self { iter })
+    }
+}
+
+impl<'ctx, R: gimli::Reader> Iterator for Temp<'ctx, R> {
+    type Item = (u64, u64, Location<'ctx>);
+
+    fn next(&mut self) -> Option<(u64, u64, Location<'ctx>)> {
+        self.iter.next()
+    }
+}
+
 struct LocationRangeUnitIter<'ctx> {
     lines: &'ctx Lines,
     seqs: &'ctx [LineSequence],
@@ -1173,6 +1203,7 @@ pub fn demangle_auto(name: Cow<str>, language: Option<gimli::DwLang>) -> Cow<str
 }
 
 /// A source location.
+#[derive(PartialEq, Clone, Debug)]
 pub struct Location<'a> {
     /// The file name.
     pub file: Option<&'a str>,
@@ -1188,5 +1219,55 @@ mod tests {
     fn context_is_send() {
         fn assert_is_send<T: Send>() {}
         assert_is_send::<crate::Context<gimli::read::EndianSlice<gimli::LittleEndian>>>();
+    }
+}
+
+extern crate memmap;
+
+#[allow(dead_code)]
+fn find_debuginfo() -> memmap::Mmap {
+    use object::Object;
+    use std::fs::File;
+
+    let path = std::env::current_exe().unwrap();
+    let file = File::open(&path).unwrap();
+    let map = unsafe { memmap::Mmap::map(&file).unwrap() };
+    let file = &object::File::parse(&*map).unwrap();
+    if let Ok(uuid) = file.mach_uuid() {
+        for candidate in path.parent().unwrap().read_dir().unwrap() {
+            let path = candidate.unwrap().path();
+            if !path.to_str().unwrap().ends_with(".dSYM") {
+                continue;
+            }
+            for candidate in path.join("Contents/Resources/DWARF").read_dir().unwrap() {
+                let path = candidate.unwrap().path();
+                let file = File::open(&path).unwrap();
+                let map = unsafe { memmap::Mmap::map(&file).unwrap() };
+                let file = &object::File::parse(&*map).unwrap();
+                if file.mach_uuid().unwrap() == uuid {
+                    return map;
+                }
+            }
+        }
+    }
+
+    return map;
+}
+
+#[test]
+fn temp() {
+    let map = find_debuginfo();
+    let file = &object::File::parse(&*map).unwrap();
+    let ctx = Context::new(file).unwrap();
+
+    let c = Temp::new(&ctx).unwrap();
+    for (i, (addr, _, location)) in c.enumerate() {
+        dbg!(addr);
+        dbg!(location.clone());
+        assert!(ctx
+            .find_location_range(addr, addr + 1)
+            .unwrap()
+            .any(|(_, _, loc)| { dbg!(loc) == location }));
+        //assert_eq!(location, loc);
     }
 }
