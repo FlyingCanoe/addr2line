@@ -22,7 +22,7 @@
 //! Currently this library only provides information from the DWARF debugging information,
 //! which is parsed using [`gimli`](https://github.com/gimli-rs/gimli).  The example CLI
 //! wrapper also uses symbol table information provided by the `object` crate.
-#![deny(missing_docs)]
+//#![deny(missing_docs)]
 #![no_std]
 
 #[allow(unused_imports)]
