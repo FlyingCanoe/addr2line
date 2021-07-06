@@ -1206,11 +1206,25 @@ pub fn demangle_auto(name: Cow<str>, language: Option<gimli::DwLang>) -> Cow<str
 #[derive(PartialEq, Clone, Debug)]
 pub struct Location {
     /// The file name.
-    pub file: Option<String>,
+    file: Option<String>,
     /// The line number.
-    pub line: Option<u32>,
+    line: Option<u32>,
     /// The column number.
-    pub column: Option<u32>,
+    column: Option<u32>,
+}
+
+impl Location {
+    pub fn file(&self) -> Option<&str> {
+        self.file.as_ref().map(|string| string.as_str())
+    }
+
+    pub fn line(&self) -> Option<u32> {
+        self.line
+    }
+
+    pub fn column(&self) -> Option<u32> {
+        self.column
+    }
 }
 
 #[cfg(test)]
