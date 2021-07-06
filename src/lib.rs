@@ -280,7 +280,7 @@ impl<R: gimli::Reader> Context<R> {
     }
 
     /// Find the source file and line corresponding to the given virtual memory address.
-    pub fn find_location(&self, probe: u64) -> Result<Option<Location<'_>>, Error> {
+    pub fn find_location(&self, probe: u64) -> Result<Option<Location>, Error> {
         for unit in self.find_units(probe) {
             if let Some(location) = unit.find_location(probe, &self.dwarf.sections)? {
                 return Ok(Some(location));
@@ -656,7 +656,7 @@ impl<R: gimli::Reader> ResUnit<R> {
         &self,
         probe: u64,
         sections: &gimli::Dwarf<R>,
-    ) -> Result<Option<Location<'_>>, Error> {
+    ) -> Result<Option<Location>, Error> {
         if let Some(mut iter) = LocationRangeUnitIter::new(self, sections, probe, probe + 1)? {
             match iter.next() {
                 None => Ok(None),
@@ -681,7 +681,7 @@ impl<R: gimli::Reader> ResUnit<R> {
         &self,
         probe: u64,
         dwarf: &ResDwarf<R>,
-    ) -> Result<(Option<&Function<R>>, Option<Location<'_>>), Error> {
+    ) -> Result<(Option<&Function<R>>, Option<Location>), Error> {
         let functions = self.parse_functions(dwarf)?;
         let function = match functions.find_address(probe) {
             Some(address) => {
@@ -758,7 +758,7 @@ impl<'ctx, R: gimli::Reader> LocationRangeIter<'ctx, R> {
         })
     }
 
-    fn next_loc(&mut self) -> Result<Option<(u64, u64, Location<'ctx>)>, Error> {
+    fn next_loc(&mut self) -> Result<Option<(u64, u64, Location)>, Error> {
         loop {
             let iter = self.iter.take();
             match iter {
@@ -787,7 +787,7 @@ impl<'ctx, R> Iterator for LocationRangeIter<'ctx, R>
 where
     R: gimli::Reader + 'ctx,
 {
-    type Item = (u64, u64, Location<'ctx>);
+    type Item = (u64, u64, Location);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -810,9 +810,9 @@ impl<'ctx, R: gimli::Reader> LocationIter<'ctx, R> {
 }
 
 impl<'ctx, R: gimli::Reader> Iterator for LocationIter<'ctx, R> {
-    type Item = (u64, u64, Location<'ctx>);
+    type Item = (u64, u64, Location);
 
-    fn next(&mut self) -> Option<(u64, u64, Location<'ctx>)> {
+    fn next(&mut self) -> Option<(u64, u64, Location)> {
         self.iter.next()
     }
 }
@@ -822,7 +822,7 @@ impl<'ctx, R> fallible_iterator::FallibleIterator for LocationRangeIter<'ctx, R>
 where
     R: gimli::Reader + 'ctx,
 {
-    type Item = (u64, u64, Location<'ctx>);
+    type Item = (u64, u64, Location);
     type Error = Error;
 
     #[inline]
@@ -891,9 +891,9 @@ impl<'ctx> LocationRangeUnitIter<'ctx> {
 }
 
 impl<'ctx> Iterator for LocationRangeUnitIter<'ctx> {
-    type Item = (u64, u64, Location<'ctx>);
+    type Item = (u64, u64, Location);
 
-    fn next(&mut self) -> Option<(u64, u64, Location<'ctx>)> {
+    fn next(&mut self) -> Option<(u64, u64, Location)> {
         loop {
             let seq = match self.seqs.get(self.seq_idx) {
                 Some(seq) => seq,
@@ -914,7 +914,7 @@ impl<'ctx> Iterator for LocationRangeUnitIter<'ctx> {
                         .lines
                         .files
                         .get(row.file_index as usize)
-                        .map(String::as_str);
+                        .map(Clone::clone);
                     let nextaddr = seq
                         .rows
                         .get(self.row_idx + 1)
@@ -1033,7 +1033,7 @@ where
     R: gimli::Reader + 'ctx,
 {
     Empty,
-    Location(Option<Location<'ctx>>),
+    Location(Option<Location>),
     Frames(FrameIterFrames<'ctx, R>),
 }
 
@@ -1045,7 +1045,7 @@ where
     sections: &'ctx gimli::Dwarf<R>,
     function: &'ctx Function<R>,
     inlined_functions: iter::Rev<maybe_small::IntoIter<&'ctx InlinedFunction<R>>>,
-    next: Option<Location<'ctx>>,
+    next: Option<Location>,
 }
 
 impl<'ctx, R> FrameIter<'ctx, R>
@@ -1053,7 +1053,7 @@ where
     R: gimli::Reader + 'ctx,
 {
     /// Advances the iterator and returns the next frame.
-    pub fn next(&mut self) -> Result<Option<Frame<'ctx, R>>, Error> {
+    pub fn next(&mut self) -> Result<Option<Frame<R>>, Error> {
         let frames = match &mut self.0 {
             FrameIterState::Empty => return Ok(None),
             FrameIterState::Location(location) => {
@@ -1101,7 +1101,7 @@ where
         };
         if func.call_file != 0 {
             if let Some(lines) = frames.unit.parse_lines(frames.sections)? {
-                next.file = lines.files.get(func.call_file as usize).map(String::as_str);
+                next.file = lines.files.get(func.call_file as usize).map(core::clone::Clone::clone);
             }
         }
         frames.next = Some(next);
@@ -1122,23 +1122,23 @@ impl<'ctx, R> fallible_iterator::FallibleIterator for FrameIter<'ctx, R>
 where
     R: gimli::Reader + 'ctx,
 {
-    type Item = Frame<'ctx, R>;
+    type Item = Frame<R>;
     type Error = Error;
 
     #[inline]
-    fn next(&mut self) -> Result<Option<Frame<'ctx, R>>, Error> {
+    fn next(&mut self) -> Result<Option<Frame<R>>, Error> {
         self.next()
     }
 }
 
 /// A function frame.
-pub struct Frame<'ctx, R: gimli::Reader> {
+pub struct Frame< R: gimli::Reader> {
     /// The DWARF unit offset corresponding to the DIE of the function.
     pub dw_die_offset: Option<gimli::UnitOffset<R::Offset>>,
     /// The name of the function.
     pub function: Option<FunctionName<R>>,
     /// The source location corresponding to this frame.
-    pub location: Option<Location<'ctx>>,
+    pub location: Option<Location>,
 }
 
 /// A function name.
@@ -1204,9 +1204,9 @@ pub fn demangle_auto(name: Cow<str>, language: Option<gimli::DwLang>) -> Cow<str
 
 /// A source location.
 #[derive(PartialEq, Clone, Debug)]
-pub struct Location<'a> {
+pub struct Location {
     /// The file name.
-    pub file: Option<&'a str>,
+    pub file: Option<String>,
     /// The line number.
     pub line: Option<u32>,
     /// The column number.
