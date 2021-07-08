@@ -897,46 +897,51 @@ impl<'ctx> Iterator for LocationRangeUnitIter<'ctx> {
         loop {
             let seq = match self.seqs.get(self.seq_idx) {
                 Some(seq) => seq,
-                None => break,
+                None => return None,
             };
 
             if seq.start >= self.probe_high {
-                break;
+                return None;
             }
 
             match seq.rows.get(self.row_idx) {
                 Some(row) => {
                     if row.address >= self.probe_high {
-                        break;
+                        return None;
                     }
 
-                    let file = self
+                    if let Some(file) = self
                         .lines
                         .files
                         .get(row.file_index as usize)
-                        .map(Clone::clone);
-                    let nextaddr = seq
-                        .rows
-                        .get(self.row_idx + 1)
-                        .map(|row| row.address)
-                        .unwrap_or(seq.end);
+                        .map(Clone::clone)
+                    {
+                        let nextaddr = seq
+                            .rows
+                            .get(self.row_idx + 1)
+                            .map(|row| row.address)
+                            .unwrap_or(seq.end);
 
-                    let item = (
-                        row.address,
-                        nextaddr - row.address,
-                        Location {
-                            file,
-                            line: if row.line != 0 { Some(row.line) } else { None },
-                            column: if row.column != 0 {
-                                Some(row.column)
+                        let loc = if row.line != 0 {
+                            let line = row.line;
+                            if row.column != 0 {
+                                let column = row.column;
+                                Location::Column(ColumnLocation { file, line, column })
                             } else {
-                                None
-                            },
-                        },
-                    );
-                    self.row_idx += 1;
+                                Location::Line(LineLocation { file, line })
+                            }
+                        } else {
+                            Location::File(FileLocation { file })
+                        };
 
-                    return Some(item);
+                        let item = (row.address, nextaddr - row.address, loc);
+                        self.row_idx += 1;
+
+                        return Some(item);
+                    } else {
+                        self.seq_idx += 1;
+                        self.row_idx = 0;
+                    }
                 }
                 None => {
                     self.seq_idx += 1;
@@ -944,7 +949,6 @@ impl<'ctx> Iterator for LocationRangeUnitIter<'ctx> {
                 }
             }
         }
-        None
     }
 }
 
@@ -1086,25 +1090,33 @@ where
             }
         };
 
-        let mut next = Location {
-            file: None,
-            line: if func.call_line != 0 {
-                Some(func.call_line)
-            } else {
-                None
-            },
-            column: if func.call_column != 0 {
-                Some(func.call_column)
-            } else {
-                None
-            },
-        };
-        if func.call_file != 0 {
+        frames.next = if func.call_file != 0 {
             if let Some(lines) = frames.unit.parse_lines(frames.sections)? {
-                next.file = lines.files.get(func.call_file as usize).map(core::clone::Clone::clone);
+                if let Some(file) = lines
+                    .files
+                    .get(func.call_file as usize)
+                    .map(core::clone::Clone::clone)
+                {
+                    if func.call_line != 0 {
+                        let line = func.call_line;
+                        if func.call_column != 0 {
+                            let column = func.call_column;
+                            Some(Location::Column(ColumnLocation { file, line, column }))
+                        } else {
+                            Some(Location::Line(LineLocation { file, line }))
+                        }
+                    } else {
+                        Some(Location::File(FileLocation { file }))
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
             }
-        }
-        frames.next = Some(next);
+        } else {
+            None
+        };
 
         Ok(Some(Frame {
             dw_die_offset: Some(func.dw_die_offset),
@@ -1132,7 +1144,7 @@ where
 }
 
 /// A function frame.
-pub struct Frame< R: gimli::Reader> {
+pub struct Frame<R: gimli::Reader> {
     /// The DWARF unit offset corresponding to the DIE of the function.
     pub dw_die_offset: Option<gimli::UnitOffset<R::Offset>>,
     /// The name of the function.
@@ -1204,26 +1216,57 @@ pub fn demangle_auto(name: Cow<str>, language: Option<gimli::DwLang>) -> Cow<str
 
 /// A source location.
 #[derive(PartialEq, Clone, Debug)]
-pub struct Location {
+pub enum Location {
+    File(FileLocation),
+    Line(LineLocation),
+    Column(ColumnLocation),
+}
+
+#[derive(PartialEq, Clone, Debug)]
+pub struct FileLocation {
     /// The file name.
-    file: Option<String>,
+    pub file: String,
+}
+
+#[derive(PartialEq, Clone, Debug)]
+pub struct LineLocation {
+    /// The file name.
+    pub file: String,
     /// The line number.
-    line: Option<u32>,
-    /// The column number.
-    column: Option<u32>,
+    pub line: u32,
+}
+
+#[derive(PartialEq, Clone, Debug)]
+pub struct ColumnLocation {
+    /// The file name.
+    pub file: String,
+    /// The line number.
+    pub line: u32,
+    pub column: u32,
 }
 
 impl Location {
     pub fn file(&self) -> Option<&str> {
-        self.file.as_ref().map(|string| string.as_str())
+        match self {
+            Location::File(FileLocation { file }) => Some(file.as_str()),
+            Location::Line(LineLocation { file, .. }) => Some(file.as_str()),
+            Location::Column(ColumnLocation { file, .. }) => Some(file.as_str()),
+        }
     }
 
     pub fn line(&self) -> Option<u32> {
-        self.line
+        match self {
+            Location::Line(LineLocation { line, .. }) => Some(*line),
+            Location::Column(ColumnLocation { line, .. }) => Some(*line),
+            _ => None,
+        }
     }
 
     pub fn column(&self) -> Option<u32> {
-        self.column
+        match self {
+            Location::Column(ColumnLocation { column, .. }) => Some(*column),
+            _ => None,
+        }
     }
 }
 
