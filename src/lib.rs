@@ -1246,11 +1246,11 @@ pub struct ColumnLocation {
 }
 
 impl Location {
-    pub fn file(&self) -> Option<&str> {
+    pub fn file(&self) -> &str {
         match self {
-            Location::File(FileLocation { file }) => Some(file.as_str()),
-            Location::Line(LineLocation { file, .. }) => Some(file.as_str()),
-            Location::Column(ColumnLocation { file, .. }) => Some(file.as_str()),
+            Location::File(FileLocation { file }) => file.as_str(),
+            Location::Line(LineLocation { file, .. }) => file.as_str(),
+            Location::Column(ColumnLocation { file, .. }) => file.as_str(),
         }
     }
 
