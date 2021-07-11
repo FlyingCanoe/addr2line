@@ -292,7 +292,7 @@ impl<R: gimli::Reader> Context<R> {
     /// TODO doc
     pub fn find_address(&self, location: Location) -> Result<Option<u64>, Error> {
         for (addr, _, loc) in LocationIter::new(self)? {
-            if loc == location {
+            if location.contain(&loc) {
                 return Ok(Some(addr));
             }
         }
@@ -1215,20 +1215,20 @@ pub fn demangle_auto(name: Cow<str>, language: Option<gimli::DwLang>) -> Cow<str
 }
 
 /// A source location.
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum Location {
     File(FileLocation),
     Line(LineLocation),
     Column(ColumnLocation),
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct FileLocation {
     /// The file name.
     pub file: String,
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct LineLocation {
     /// The file name.
     pub file: String,
@@ -1236,7 +1236,7 @@ pub struct LineLocation {
     pub line: u32,
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct ColumnLocation {
     /// The file name.
     pub file: String,
@@ -1268,6 +1268,40 @@ impl Location {
             _ => None,
         }
     }
+
+    fn in_same_file(&self, other: &Self) -> bool {
+        self.file() == other.file()
+    }
+
+    fn in_same_line(&self, other: &Self) -> bool {
+        if let (Some(lhs), Some(rhs)) = (self.line(), other.line()) {
+            lhs == rhs
+        } else {
+            false
+        }
+    }
+
+    fn in_same_column(&self, other: &Self) -> bool {
+        if let (Some(lhs), Some(rhs)) = (self.column(), other.column()) {
+            lhs == rhs
+        } else {
+            false
+        }
+    }
+
+    pub fn contain(&self, other: &Self) -> bool {
+        match self {
+            Location::File(..) => 
+                self.in_same_file(other)
+            ,
+            Location::Line(..) => {
+                self.in_same_file(other) && self.in_same_line(other)
+            }
+            Location::Column(..) => {
+                self.in_same_file(other) && self.in_same_line(other) && self.in_same_column(other)
+            },
+        }
+    } 
 }
 
 #[cfg(test)]
