@@ -47,7 +47,7 @@ impl<'a> Iterator for Addrs<'a> {
 
 fn print_loc(loc: &Option<Location>, basenames: bool, llvm: bool) {
     if let Some(ref loc) = *loc {
-        let file = loc.file().unwrap();
+        let file = loc.file();
         let path = if basenames {
             Path::new(Path::new(file).file_name().unwrap())
         } else {
