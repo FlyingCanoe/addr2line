@@ -291,11 +291,15 @@ impl<R: gimli::Reader> Context<R> {
 
     /// TODO doc
     pub fn find_address_list(&self, location: Location) -> Result<Vec<u64>, Error> {
-        Ok(LocationIter::new(self)?.filter_map(|(addr, _, loc)| if location.contain(&loc) {
-            Some(addr)
-        } else {
-            None
-        }).collect())
+        Ok(LocationIter::new(self)?
+            .filter_map(|(addr, _, loc)| {
+                if location.contain(&loc) {
+                    Some(addr)
+                } else {
+                    None
+                }
+            })
+            .collect())
     }
 
     /// Return source file and lines for a range of addresses. For each location it also
@@ -1289,17 +1293,13 @@ impl Location {
 
     pub fn contain(&self, other: &Self) -> bool {
         match self {
-            Location::File(..) => 
-                self.in_same_file(other)
-            ,
-            Location::Line(..) => {
-                self.in_same_file(other) && self.in_same_line(other)
-            }
+            Location::File(..) => self.in_same_file(other),
+            Location::Line(..) => self.in_same_file(other) && self.in_same_line(other),
             Location::Column(..) => {
                 self.in_same_file(other) && self.in_same_line(other) && self.in_same_column(other)
-            },
+            }
         }
-    } 
+    }
 }
 
 #[cfg(test)]
