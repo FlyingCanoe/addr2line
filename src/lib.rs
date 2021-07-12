@@ -290,14 +290,12 @@ impl<R: gimli::Reader> Context<R> {
     }
 
     /// TODO doc
-    pub fn find_address(&self, location: Location) -> Result<Option<u64>, Error> {
-        for (addr, _, loc) in LocationIter::new(self)? {
-            if location.contain(&loc) {
-                return Ok(Some(addr));
-            }
-        }
-
-        Ok(None)
+    pub fn find_address_list(&self, location: Location) -> Result<Vec<u64>, Error> {
+        Ok(LocationIter::new(self)?.filter_map(|(addr, _, loc)| if location.contain(&loc) {
+            Some(addr)
+        } else {
+            None
+        }).collect())
     }
 
     /// Return source file and lines for a range of addresses. For each location it also
